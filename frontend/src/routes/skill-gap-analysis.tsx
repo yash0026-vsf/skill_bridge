@@ -54,12 +54,12 @@ type Filter =
   | "Governance"
   | "Managerial";
 
-const gapRows = getSkillGapRows();
-const domainGaps = getSkillGapDomains();
-
 function SkillGapAnalysisPage() {
   const currentUser = getCurrentUserProfile();
+  const gapRows = useMemo(() => getSkillGapRows(), [currentUser.employeeId, currentUser.overallCompetency]);
+  const domainGaps = useMemo(() => getSkillGapDomains(), [currentUser.employeeId, currentUser.overallCompetency]);
   const [activeFilter, setActiveFilter] = useState<Filter>("all");
+
 
   const filteredRows = useMemo(() => {
     if (activeFilter === "all") return gapRows;
