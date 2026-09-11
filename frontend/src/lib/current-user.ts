@@ -1,5 +1,7 @@
 export type CurrentUserProfile = {
+  employeeId?: string;
   name: string;
+  role?: "admin" | "learner";
   designation: string;
   department: string;
   currentAssignment: string;
@@ -9,21 +11,25 @@ export type CurrentUserProfile = {
   existingSkills: string[];
   workExperience: string;
   resumeFileName: string;
+  overallCompetency?: number;
 };
 
 const STORAGE_KEY = "statskill.currentUserProfile";
 
 export const defaultCurrentUserProfile: CurrentUserProfile = {
-  name: "",
-  designation: "",
-  department: "",
-  currentAssignment: "",
-  highestQualification: "",
-  yearsOfExperience: "",
-  previousTraining: "",
-  existingSkills: [],
-  workExperience: "",
-  resumeFileName: "",
+  employeeId: "E001",
+  name: "Vivek Reddy",
+  role: "learner",
+  designation: "Statistical Officer",
+  department: "Ministry of Electronics & IT",
+  currentAssignment: "NSS Field Survey & Data Validation",
+  highestQualification: "M.Sc. Statistics",
+  yearsOfExperience: "8",
+  previousTraining: "Data Privacy in Public Sector, Foundational AI",
+  existingSkills: ["Survey Design", "Data Analysis", "Communication"],
+  workExperience: "Responsible for data validation, tabulation, and preliminary analysis of survey datasets.",
+  resumeFileName: "Vivek_Reddy_Resume.pdf",
+  overallCompetency: 74,
 };
 
 export function getCurrentUserProfile(): CurrentUserProfile {
