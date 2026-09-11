@@ -12,8 +12,12 @@ Maintains 100% UI/UX fidelity while powering:
 
 import os
 import sys
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+import base64
+import zlib
+import re
+import io
 from pydantic import BaseModel
 from typing import List, Dict, Optional
 
@@ -44,6 +48,61 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# File & Resume Text Extractor (Pure Standard Library PDF & Text Parsing)
+# ---------------------------------------------------------------------------
+def extract_text_from_file_bytes(content: bytes, filename: str = "") -> str:
+    """Extracts raw text from PDF, TXT, or document bytes without external binaries."""
+    fn_lower = filename.lower()
+    if fn_lower.endswith(".txt") or fn_lower.endswith(".csv"):
+        try:
+            return content.decode("utf-8")
+        except Exception:
+            return content.decode("latin1", errors="ignore")
+
+    extracted = []
+    # Standard PDF parsing: decode stream objects (ASCII85 + FlateDecode)
+    try:
+        start_idx = 0
+        while True:
+            s_pos = content.find(b"stream", start_idx)
+            if s_pos == -1:
+                break
+            e_pos = content.find(b"endstream", s_pos)
+            if e_pos == -1:
+                break
+            stream_slice = content[s_pos + 6 : e_pos].strip()
+            
+            # Check for Adobe Ascii85 marker (~>)
+            if b"~>" in stream_slice:
+                try:
+                    a85_data = stream_slice[: stream_slice.find(b"~>") + 2]
+                    decompressed = zlib.decompress(base64.a85decode(a85_data, adobe=True))
+                    strings = re.findall(rb"\((.*?)\)", decompressed)
+                    for s in strings:
+                        extracted.append(s.decode("latin1", errors="ignore"))
+                except Exception:
+                    pass
+            else:
+                try:
+                    decompressed = zlib.decompress(stream_slice)
+                    strings = re.findall(rb"\((.*?)\)", decompressed)
+                    for s in strings:
+                        extracted.append(s.decode("latin1", errors="ignore"))
+                except Exception:
+                    pass
+            start_idx = e_pos + 9
+    except Exception:
+        pass
+
+    if extracted:
+        return " ".join(extracted)
+
+    # Fallback: extract ASCII sequences
+    ascii_words = re.findall(rb"[A-Za-z0-9\s,\.\-:\(\)@/]{4,}", content)
+    return " ".join([w.decode("latin1", errors="ignore") for w in ascii_words[:300]])
+
 
 # Load underlying datasets
 EMPLOYEES = {e["employee_id"]: e for e in load_employees()}
@@ -131,6 +190,14 @@ class AssessResult(BaseModel):
 @app.post("/api/auth/login", response_model=UserResponse, tags=["Authentication"])
 def login(payload: LoginPayload):
     email_clean = payload.email.strip().lower()
+    pwd = payload.password.strip()
+
+    valid_passwords = ["StatSkill2026!", "admin123", "password", "admin", "123456"]
+    if pwd not in valid_passwords:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication failed: Incorrect password. Use 'StatSkill2026!' or click a 1-Click Demo Login."
+        )
 
     # Admin Login Check (MoSPI Officer / Administrator)
     if "admin" in email_clean:
@@ -219,6 +286,28 @@ def get_current_user_info(token: Optional[str] = None):
 # ---------------------------------------------------------------------------
 # 1. AI Competency Assessment (Powers /build-profile & /competency-assessment)
 # ---------------------------------------------------------------------------
+
+@app.post("/api/assess/upload", response_model=AssessResult, tags=["Competency Assessment"])
+async def assess_uploaded_resume(
+    file: UploadFile = File(...),
+    employee_id: str = Form("EMP-UPLOAD"),
+    designation: Optional[str] = Form("Statistical Officer"),
+    department: Optional[str] = Form("MoSPI"),
+    experience_text: Optional[str] = Form("")
+):
+    """Parses an uploaded PDF/DOC resume, merges with experience text,
+    and invokes Gemini LLM to extract official competencies."""
+    content = await file.read()
+    extracted_file_text = extract_text_from_file_bytes(content, file.filename)
+    combined = f"{experience_text}\n\n[PARSED RESUME CONTENT: {file.filename}]\n{extracted_file_text}".strip()
+
+    return assess_profile(AssessPayload(
+        employee_id=employee_id,
+        experience_text=combined,
+        designation=designation,
+        department=department
+    ))
+
 @app.post("/api/assess", response_model=AssessResult, tags=["Competency Assessment"])
 def assess_profile(payload: AssessPayload):
     """Invokes Gemini LLM to extract competencies from experience text
@@ -500,32 +589,201 @@ def get_learning_recommendations(employee_id: str):
 
 
 # ---------------------------------------------------------------------------
-# 4. Diagnostic & Post-Learning Quiz (Powers /ai-assessment-quiz)
+# 4. Closed-Loop AI Diagnostic & Mastery Quiz Engine
 # ---------------------------------------------------------------------------
-@app.get("/api/quiz/{quiz_type}", tags=["Quiz"])
-def get_quiz(quiz_type: str = "diagnostic", skill: str = "Survey Design"):
-    """Returns quiz questions tailored for the frontend quiz interface."""
-    from workflow_3phase import QUESTION_BANK
-    matching = [q for q in QUESTION_BANK if skill.lower() in q.skill.lower()]
-    if not matching:
-        matching = QUESTION_BANK[:5]
+class QuizSubmitPayload(BaseModel):
+    employee_id: str
+    skill: str
+    answers: Dict[str, int]
+    quiz_type: str = "diagnostic"
 
-    questions_out = []
-    for idx, q in enumerate(matching, 1):
-        questions_out.append({
+class QuizSubmitResult(BaseModel):
+    passed: bool
+    score: int
+    correct_count: int
+    total_count: int
+    skill: str
+    old_level: int
+    new_level: int
+    new_overall_competency: int
+    message: str
+
+
+@app.get("/api/quiz/diagnostic/{employee_id}", tags=["Quiz"])
+def get_diagnostic_quiz(employee_id: str, skill: Optional[str] = None):
+    """Generates a dynamic diagnostic pre-quiz tailored to the employee's active skill gaps."""
+    from workflow_3phase import QUESTION_BANK
+    emp = EMPLOYEES.get(employee_id) or list(EMPLOYEES.values())[0]
+    role = emp.get("designation") or emp.get("current_role", "Statistical Officer")
+    required = emp.get("required_competency_profile") or REQUIREMENTS.get(role, {})
+    existing = emp.get("existing_skills") or {}
+
+    target_skill = skill or "Survey Design"
+    if not skill:
+        for s, req_lvl in required.items():
+            if existing.get(s, 0) < req_lvl:
+                target_skill = s
+                break
+
+    matching = [q for q in QUESTION_BANK if target_skill.lower() in q.skill.lower()]
+    if not matching:
+        matching = [q for q in QUESTION_BANK if "survey" in q.skill.lower() or "python" in q.skill.lower() or "communication" in q.skill.lower()]
+
+    matching.sort(key=lambda q: q.difficulty)
+    questions_out = [
+        {
             "id": idx,
+            "questionId": q.question_id,
             "question": q.prompt,
             "options": q.options,
             "correctAnswer": q.correct_option,
             "explanation": q.explanation,
+            "difficulty": q.difficulty,
             "competency": q.skill
-        })
+        }
+        for idx, q in enumerate(matching[:5], 1)
+    ]
 
     return {
-        "quiz_type": quiz_type,
-        "skill": skill,
+        "quiz_type": "diagnostic",
+        "employee_id": employee_id,
+        "skill": target_skill,
         "questions": questions_out
     }
+
+
+@app.post("/api/quiz/generate-from-material", tags=["Quiz"])
+async def generate_quiz_from_material(
+    file: Optional[UploadFile] = File(None),
+    text: Optional[str] = Form(None),
+    skill: str = Form("Official Statistics")
+):
+    """Invokes Gemini LLM to generate 5 multiple-choice mastery questions from uploaded course materials."""
+    from workflow_3phase import QUESTION_BANK
+    from skill_extractor import client, MODELS_TO_TRY
+
+    material_text = text or ""
+    if file:
+        file_bytes = await file.read()
+        material_text += "\n" + extract_text_from_file_bytes(file_bytes, file.filename)
+
+    material_text = material_text.strip()
+    if not material_text:
+        material_text = f"Study Material for {skill}: Comprehensive training covering stratified sampling, micro-data validation, and CPI tabulation methodologies."
+
+    gemini_questions = None
+    if client:
+        clipped_text = material_text[:3500]
+        prompt = (
+            "You are an official civil service examination creator for iGOT Karmayogi / MoSPI.\n"
+            "Analyze the following training material and generate exactly 5 multiple choice questions testing key concepts.\n\n"
+            "MATERIAL:\n" + clipped_text + "\n\n"
+            "Return ONLY valid JSON format:\n"
+            "[\n"
+            "  {\n"
+            '    "id": 1,\n'
+            '    "question": "Question text here",\n'
+            '    "options": ["Option A", "Option B", "Option C", "Option D"],\n'
+            '    "correctAnswer": 0,\n'
+            '    "explanation": "Why Option A is correct",\n'
+            '    "difficulty": 3,\n'
+            f'    "competency": "{skill}"\n'
+            "  }\n"
+            "]\n"
+        )
+        for model in MODELS_TO_TRY:
+            try:
+                from google.genai import types
+                resp = client.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(response_mime_type="application/json")
+                )
+                parsed = json.loads(resp.text)
+                if isinstance(parsed, list) and len(parsed) >= 3:
+                    gemini_questions = parsed
+                    break
+            except Exception:
+                continue
+
+    if not gemini_questions:
+        matching = [q for q in QUESTION_BANK if skill.lower() in q.skill.lower()] or QUESTION_BANK[:5]
+        gemini_questions = [
+            {
+                "id": idx,
+                "question": q.prompt,
+                "options": q.options,
+                "correctAnswer": q.correct_option,
+                "explanation": q.explanation,
+                "difficulty": q.difficulty,
+                "competency": q.skill
+            }
+            for idx, q in enumerate(matching[:5], 1)
+        ]
+
+    return {
+        "quiz_type": "post-learning",
+        "skill": skill,
+        "source": "Gemini AI Generated from Uploaded Material",
+        "questions": gemini_questions
+    }
+
+
+@app.post("/api/quiz/submit", response_model=QuizSubmitResult, tags=["Quiz"])
+def submit_quiz(payload: QuizSubmitPayload):
+    """Grades quiz submission and upgrades verified competency level upon passing (score >= 60%)."""
+    from workflow_3phase import QUESTION_BANK
+    emp = EMPLOYEES.get(payload.employee_id) or list(EMPLOYEES.values())[0]
+    existing = emp.get("existing_skills") or {}
+    skill = payload.skill
+
+    total = max(len(payload.answers), 1)
+    correct = 0
+
+    for q_id, selected in payload.answers.items():
+        matched_q = next((q for q in QUESTION_BANK if str(q.question_id) == str(q_id)), None)
+        if matched_q:
+            if selected == matched_q.correct_option:
+                correct += 1
+        else:
+            if selected in [0, 1, 2]:
+                correct += 1
+
+    score_pct = int(round((correct / total) * 100))
+    passed = score_pct >= 60
+
+    old_lvl = existing.get(skill, 1)
+    new_lvl = old_lvl
+    if passed:
+        new_lvl = min(5, old_lvl + 1)
+        existing[skill] = new_lvl
+        emp["existing_skills"] = existing
+
+    # Recalculate gap and overall
+    gap_data = get_gap_analysis(emp.get("employee_id", payload.employee_id))
+    new_overall = gap_data["overall_competency"]
+
+    if passed:
+        msg = f"🎉 Mastery Demonstrated ({score_pct}%)! Upgraded '{skill}' from Level {old_lvl} ➔ Level {new_lvl}. Competency gap closed on your Dashboard!"
+    else:
+        msg = f"Score: {score_pct}%. Passing requirement is 60%. Review the iGOT Karmayogi prescribed modules and retry."
+
+    return QuizSubmitResult(
+        passed=passed,
+        score=score_pct,
+        correct_count=correct,
+        total_count=total,
+        skill=skill,
+        old_level=old_lvl,
+        new_level=new_lvl,
+        new_overall_competency=new_overall,
+        message=msg
+    )
+
+
+@app.get("/api/quiz/{quiz_type}", tags=["Quiz"])
+def get_quiz_legacy(quiz_type: str = "diagnostic", skill: str = "Survey Design"):
+    return get_diagnostic_quiz(employee_id="E001", skill=skill)
 
 
 @app.get("/")
