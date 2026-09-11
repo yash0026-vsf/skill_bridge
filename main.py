@@ -12,6 +12,10 @@ if hasattr(sys.stdout, "reconfigure"):
     except Exception:
         pass
 
+# Expose top-level FastAPI application for Render, Uvicorn, and cloud deployments
+from statskill_backend import app
+
+
 
 def analyze_employee(employee, requirements):
     """Processes a single employee: extracts skills, normalizes, merges, and calculates gaps."""
