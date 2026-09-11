@@ -77,6 +77,12 @@ The platform operates across 3 interconnected phases to ensure evidence-backed, 
 ## 📁 Repository Structure
 
 ```text
+├── frontend/                        # Complete StatSkill React + Tailwind UI (Member 5)
+│   ├── src/                         # TanStack Router, Recharts, Competency UI components
+│   ├── public/                      # Static assets & government logos
+│   ├── package.json                 # Frontend dependencies & build scripts
+│   └── vite.config.ts               # Vite & Tailwind configuration
+│
 ├── data/
 │   ├── employees.json               # 25 real government employee profiles across ministries
 │   ├── employee_requirement.json    # Benchmark role skill requirements across 8 designations
@@ -88,13 +94,16 @@ The platform operates across 3 interconnected phases to ensure evidence-backed, 
 ├── gap_analyzer.py                  # Case-insensitive skill merger & gap calculator
 ├── data_loader.py                   # UTF-8 data loaders for all JSON datasets
 │
+├── statskill_backend.py             # Connected FastAPI REST server powering the React frontend
+├── backend_server.py                # Member 4 backend router integration
 ├── main.py                          # Batch pipeline: processes all 25 employees
 ├── bridge_member3.py                # Direct connector to Member 3's Quiz & Recommendation API
 ├── workflow_3phase.py               # Full end-to-end 3-Phase Closed-Loop executable demo
+├── web_app.py                       # Interactive Streamlit portal
 │
-├── requirements.txt                 # Python dependencies
+├── requirements.txt                 # Python dependencies (FastAPI, Streamlit, google-genai)
 ├── .env.example                     # Environment template (API key placeholder)
-└── .gitignore                       # Protects private .env and caches from git
+└── .gitignore                       # Protects private .env, node_modules, and caches
 ```
 
 ---

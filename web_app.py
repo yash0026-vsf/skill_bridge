@@ -17,13 +17,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Custom Styling
+# Custom Styling - StatSkill Design System
 st.markdown("""
     <style>
-    .main-header { font-size: 2.2rem; font-weight: 700; color: #1E3A8A; margin-bottom: 0.2rem; }
-    .sub-header { font-size: 1.1rem; color: #4B5563; margin-bottom: 1.5rem; }
-    .phase-badge { background-color: #E0E7FF; color: #3730A3; padding: 4px 10px; border-radius: 6px; font-weight: 600; font-size: 0.9rem; }
-    .metric-card { background: white; border-radius: 8px; padding: 15px; border-left: 5px solid #3B82F6; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    html, body, [class*="css"] { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .stApp { background-color: #F8FAFC; }
+    .main-header { font-size: 2.2rem; font-weight: 800; color: #0F172A; margin-bottom: 0.2rem; letter-spacing: -0.02em; }
+    .sub-header { font-size: 1rem; color: #64748B; margin-bottom: 1.5rem; }
+    .hero-banner { background: linear-gradient(135deg, #0F172A 0%, #1E293B 100%); border-radius: 14px; padding: 24px 30px; color: white; margin-bottom: 24px; border: 1px solid #334155; }
+    .stat-card { background: white; border-radius: 12px; padding: 18px; border: 1px solid #E2E8F0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .metric-card { background: white; border-radius: 10px; padding: 16px; border-left: 4px solid #EA580C; border-top: 1px solid #E2E8F0; border-right: 1px solid #E2E8F0; border-bottom: 1px solid #E2E8F0; box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+    .stButton>button { border-radius: 8px; font-weight: 600; }
+    .stButton>button[kind="primary"] { background-color: #EA580C; border-color: #EA580C; }
+    .stButton>button[kind="primary"]:hover { background-color: #C2410C; border-color: #C2410C; }
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     </style>
 """, unsafe_allow_html=True)
 
