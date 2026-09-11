@@ -12,7 +12,8 @@ import {
 } from "lucide-react";
 import { StatSkillWordmark } from "@/components/StatSkillLogo";
 import { getCurrentUserProfile, saveCurrentUserProfile } from "@/lib/current-user";
-import { assessProfile, fetchGapAnalysis } from "@/lib/api";
+import { uploadAndAssessResume, assessProfile, fetchGapAnalysis } from "@/lib/api";
+
 
 export const Route = createFileRoute("/build-profile")({
   head: () => ({
@@ -138,13 +139,15 @@ function BuildProfilePage() {
     const empId = `EMP-${Date.now().toString().slice(-4)}`;
 
     try {
-      // Call Gemini AI backend extraction & normalization
-      const assessResult = await assessProfile({
-        employee_id: empId,
-        experience_text: workExperience,
-        designation: profile.designation,
-        department: profile.department
-      });
+      // Send actual uploaded resume file via FormData to Gemini AI extraction & normalization
+      const formData = new FormData();
+      formData.append("file", resumeFile);
+      formData.append("employee_id", empId);
+      formData.append("designation", profile.designation);
+      formData.append("department", profile.department);
+      formData.append("experience_text", workExperience);
+
+      const assessResult = await uploadAndAssessResume(formData);
 
       // Call dynamic gap analysis
       await fetchGapAnalysis(empId);
