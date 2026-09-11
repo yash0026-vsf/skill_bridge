@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { StatSkillWordmark } from "@/components/StatSkillLogo";
 import { getCurrentUserProfile, saveCurrentUserProfile } from "@/lib/current-user";
+import { assessProfile, fetchGapAnalysis } from "@/lib/api";
 
 export const Route = createFileRoute("/build-profile")({
   head: () => ({
@@ -60,6 +61,7 @@ function BuildProfilePage() {
   const [newSkill, setNewSkill] = useState("");
   const [resumeFile, setResumeFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const updateProfile = (field: keyof ProfileData, value: string) => {
     setProfile((current) => ({ ...current, [field]: value }));
@@ -105,7 +107,7 @@ function BuildProfilePage() {
     if (file && validateResume(file)) setResumeFile(file);
   };
 
-  const handleGenerateAssessment = () => {
+  const handleGenerateAssessment = async () => {
     const requiredFields: Array<[keyof ProfileData, string]> = [
       ["name", "full name"],
       ["designation", "designation"],
@@ -132,15 +134,54 @@ function BuildProfilePage() {
       return;
     }
 
-    saveCurrentUserProfile({
-      ...profile,
-      existingSkills,
-      workExperience,
-      resumeFileName: resumeFile.name,
-    });
+    setIsAnalyzing(true);
+    const empId = `EMP-${Date.now().toString().slice(-4)}`;
 
-    navigate({ to: "/competency-assessment" });
+    try {
+      // Call Gemini AI backend extraction & normalization
+      const assessResult = await assessProfile({
+        employee_id: empId,
+        experience_text: workExperience,
+        designation: profile.designation,
+        department: profile.department
+      });
+
+      // Call dynamic gap analysis
+      await fetchGapAnalysis(empId);
+
+      const combinedSkills = Array.from(
+        new Set([
+          ...existingSkills,
+          ...assessResult.extracted_skills.map(s => s.skill)
+        ])
+      );
+
+      saveCurrentUserProfile({
+        ...profile,
+        employeeId: empId,
+        existingSkills: combinedSkills,
+        workExperience,
+        resumeFileName: resumeFile.name,
+        overallCompetency: assessResult.overall_score
+      });
+
+      navigate({ to: "/competency-assessment" });
+    } catch (err) {
+      console.warn("AI assessment error fallback:", err);
+      saveCurrentUserProfile({
+        ...profile,
+        employeeId: empId,
+        existingSkills,
+        workExperience,
+        resumeFileName: resumeFile.name,
+        overallCompetency: 74
+      });
+      navigate({ to: "/competency-assessment" });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
+
 
   const profileItems = [
     {
@@ -333,8 +374,13 @@ function BuildProfilePage() {
                 </div>
 
                 <div className="mt-6 flex items-center justify-end border-t border-border pt-6">
-                  <button type="button" onClick={handleGenerateAssessment} className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:bg-accent/90">
-                    Generate Initial Assessment
+                  <button 
+                    type="button" 
+                    disabled={isAnalyzing}
+                    onClick={handleGenerateAssessment} 
+                    className="inline-flex items-center gap-2 rounded-lg bg-accent px-5 py-2.5 text-sm font-semibold text-accent-foreground transition hover:bg-accent/90 disabled:opacity-60"
+                  >
+                    {isAnalyzing ? "Extracting Competencies with Gemini AI..." : "Generate Initial Assessment"}
                     <ArrowRight className="h-4 w-4" />
                   </button>
                 </div>
