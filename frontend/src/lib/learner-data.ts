@@ -550,9 +550,17 @@ const mockLearningRecommendations: LearningPathRecommendation[] = [
   },
 ];
 
-/**
- * Replace only this implementation during backend integration.
- */
-export function getLearningRecommendations() {
+export function getLearningRecommendations(): LearningPathRecommendation[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeRecommendations");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch {}
+  }
   return mockLearningRecommendations;
 }
