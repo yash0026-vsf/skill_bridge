@@ -53,6 +53,20 @@ COURSES = load_courses()
 # ---------------------------------------------------------------------------
 # Pydantic Schemas (Aligned with frontend expectations)
 # ---------------------------------------------------------------------------
+class LoginPayload(BaseModel):
+    email: str
+    password: str
+
+class UserResponse(BaseModel):
+    user_id: str
+    name: str
+    email: str
+    role: str
+    designation: Optional[str] = None
+    department: Optional[str] = None
+    employee_id: Optional[str] = None
+    token: str
+
 class AssessPayload(BaseModel):
     employee_id: str
     experience_text: str
@@ -73,13 +87,103 @@ class AssessResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 0. Authentication (Powers /login with Role-Based Access)
+# ---------------------------------------------------------------------------
+@app.post("/api/auth/login", response_model=UserResponse, tags=["Authentication"])
+def login(payload: LoginPayload):
+    email_clean = payload.email.strip().lower()
+
+    # Admin Login Check (MoSPI Officer / Administrator)
+    if "admin" in email_clean:
+        return UserResponse(
+            user_id="USR-ADMIN-01",
+            name="Dr. S. K. Mukherjee",
+            email="admin@statskill.gov.in",
+            role="admin",
+            designation="Joint Director (HRD & Training)",
+            department="Ministry of Statistics & Programme Implementation (MoSPI)",
+            employee_id="ADM001",
+            token="bearer-admin-token-2026"
+        )
+
+    # Check matching employee in official catalog (by ID or name)
+    found_emp = None
+    for emp in EMPLOYEES.values():
+        e_id = emp.get("employee_id", "").lower()
+        e_name = emp.get("name", "").lower()
+        if e_id == email_clean or email_clean in e_name or email_clean.split("@")[0] in e_name.replace(" ", "."):
+            found_emp = emp
+            break
+
+    # If demo test profiles
+    if not found_emp:
+        if "rajesh" in email_clean or "101" in email_clean:
+            found_emp = {
+                "employee_id": "EMP101",
+                "name": "Rajesh Kumar",
+                "designation": "Statistical Officer",
+                "department": "MoSPI, Government of India",
+                "existing_skills": {"SPSS": 4, "MS Excel": 4, "Sampling Design": 3, "Survey Auditing": 3}
+            }
+        elif "priya" in email_clean or "102" in email_clean:
+            found_emp = {
+                "employee_id": "EMP102",
+                "name": "Priya Sharma",
+                "designation": "Data Analyst",
+                "department": "National Accounts & Economic Analytics",
+                "existing_skills": {"Python": 4, "SQL": 4, "Tableau": 4, "Exploratory Data Analysis": 3}
+            }
+        elif "amit" in email_clean or "103" in email_clean:
+            found_emp = {
+                "employee_id": "EMP103",
+                "name": "Amit Patel",
+                "designation": "Field Survey Supervisor",
+                "department": "Field Operations Division (FOD)",
+                "existing_skills": {"Field Enumeration": 4, "CAPI Application": 3, "Quality Control": 3}
+            }
+        else:
+            # Default to first official employee (Vivek Reddy - E001)
+            found_emp = EMPLOYEES.get("E001") or list(EMPLOYEES.values())[0]
+
+    return UserResponse(
+        user_id=f"USR-{found_emp.get('employee_id')}",
+        name=found_emp.get("name", "Officer"),
+        email=payload.email if "@" in payload.email else f"{found_emp.get('name', 'officer').lower().replace(' ', '.')}@gov.in",
+        role="learner",
+        designation=found_emp.get("designation") or found_emp.get("current_role", "Statistical Officer"),
+        department=found_emp.get("department", "MoSPI"),
+        employee_id=found_emp.get("employee_id"),
+        token=f"bearer-learner-token-{found_emp.get('employee_id')}"
+    )
+
+
+@app.get("/api/auth/me", tags=["Authentication"])
+def get_current_user_info(token: Optional[str] = None):
+    if token and "admin" in token.lower():
+        return {
+            "user_id": "USR-ADMIN-01",
+            "name": "Dr. S. K. Mukherjee",
+            "role": "admin",
+            "designation": "Joint Director",
+            "department": "MoSPI"
+        }
+    return {
+        "user_id": "USR-E001",
+        "name": "Vivek Reddy",
+        "role": "learner",
+        "designation": "Statistical Officer",
+        "department": "Ministry of Electronics & IT",
+        "employee_id": "E001"
+    }
+
+
+# ---------------------------------------------------------------------------
 # 1. AI Competency Assessment (Powers /build-profile & /competency-assessment)
 # ---------------------------------------------------------------------------
 @app.post("/api/assess", response_model=AssessResult, tags=["Competency Assessment"])
 def assess_profile(payload: AssessPayload):
     """Invokes Gemini LLM to extract competencies from experience text
-
-    and maps them to official civil service taxonomy.
+    and updates active employee record for dynamic gap analysis.
     """
     text = payload.experience_text.strip()
     if not text:
@@ -90,16 +194,18 @@ def assess_profile(payload: AssessPayload):
             overall_score=45
         )
 
-    # Member 2: Real Gemini AI extraction & normalization
+    # Real Gemini AI extraction & normalization
     raw = extract_skills(text)
     normalized = normalize_extracted_skills(raw)
 
     extracted_skills = []
+    extracted_dict = {}
     category_scores = {"Statistical": [], "Technical": [], "Governance": [], "Behavioural": []}
 
     for item in normalized:
         comp_name = item.get("mapped_competency") or item.get("raw_skill", item.get("skill"))
         lvl = int(item.get("level", 1))
+        extracted_dict[comp_name] = lvl
         extracted_skills.append(
             ExtractedSkillItem(
                 skill=comp_name,
@@ -108,13 +214,13 @@ def assess_profile(payload: AssessPayload):
                 evidence=item.get("evidence")
             )
         )
-        # Convert level (1-5) to percentage score (20-100%)
         pct = lvl * 20
-        if any(w in comp_name.lower() for w in ["survey", "analysis", "data", "sampling", "statistic"]):
+        c_lower = comp_name.lower()
+        if any(w in c_lower for w in ["survey", "analysis", "data", "sampling", "statistic", "econom"]):
             category_scores["Statistical"].append(pct)
-        elif any(w in comp_name.lower() for w in ["python", "sql", "digital", "system", "code"]):
+        elif any(w in c_lower for w in ["python", "sql", "digital", "system", "code", "automation"]):
             category_scores["Technical"].append(pct)
-        elif any(w in comp_name.lower() for w in ["governance", "privacy", "office", "compliance"]):
+        elif any(w in c_lower for w in ["governance", "privacy", "office", "compliance", "rti"]):
             category_scores["Governance"].append(pct)
         else:
             category_scores["Behavioural"].append(pct)
@@ -125,8 +231,19 @@ def assess_profile(payload: AssessPayload):
     }
     overall = int(sum(initial_comps.values()) / len(initial_comps))
 
+    # Update active in-memory employee record so subsequent /gap-analysis reflects this assessment!
+    e_id = payload.employee_id or "EMP-ACTIVE"
+    EMPLOYEES[e_id] = {
+        "employee_id": e_id,
+        "name": payload.employee_id,
+        "designation": payload.designation or "Statistical Officer",
+        "department": payload.department or "Ministry of Statistics (MoSPI)",
+        "existing_skills": extracted_dict,
+        "resume_text": text
+    }
+
     return AssessResult(
-        employee_id=payload.employee_id,
+        employee_id=e_id,
         extracted_skills=extracted_skills,
         initial_competencies=initial_comps,
         overall_score=overall
@@ -138,31 +255,54 @@ def assess_profile(payload: AssessPayload):
 # ---------------------------------------------------------------------------
 @app.get("/api/gap-analysis/{employee_id}", tags=["Gap Analysis"])
 def get_gap_analysis(employee_id: str):
-    """Returns gap rows, domain rollups, and summary metrics for the frontend table & charts."""
+    """Returns 100% dynamic gap rows, domain rollups, and summary metrics for the frontend table & charts."""
     emp = EMPLOYEES.get(employee_id) or list(EMPLOYEES.values())[0]
     role = emp.get("designation") or emp.get("current_role", "Statistical Officer")
-    required = REQUIREMENTS.get(role, {})
+    required = emp.get("required_competency_profile") or REQUIREMENTS.get(role, {})
     existing = emp.get("existing_skills") or emp.get("quiz_assessed_skills") or {}
 
     calculated = calculate_skill_gaps(existing, required)
 
     rows = []
+    category_gaps = {
+        "Technical & Analytical": 0,
+        "Statistical Sciences": 0,
+        "Managerial & Field Operations": 0,
+        "Digital Governance": 0
+    }
+    category_largest_gap = {}
+    total_req_points = 0
+    total_curr_points = 0
+
     for item in calculated:
         curr = item["current_level"]
         req = item["required_level"]
         gap = curr - req  # Frontend format: negative means gap (e.g. -2)
         priority = "High" if gap <= -2 else ("Moderate" if gap == -1 else "On Target")
-        
+
+        total_req_points += req
+        total_curr_points += min(curr, req)
+
         # Categorize
         name = item["skill"]
-        if any(w in name.lower() for w in ["python", "sql", "digital", "gis"]):
+        name_l = name.lower()
+        if any(w in name_l for w in ["python", "sql", "digital", "gis", "code", "system", "automation"]):
             cat = "Technical"
-        elif any(w in name.lower() for w in ["survey", "analysis", "sampling", "account"]):
+            dom = "Technical & Analytical"
+        elif any(w in name_l for w in ["survey", "analysis", "sampling", "account", "statistic", "econom"]):
             cat = "Statistical"
-        elif any(w in name.lower() for w in ["governance", "privacy", "office"]):
+            dom = "Statistical Sciences"
+        elif any(w in name_l for w in ["governance", "privacy", "office", "compliance", "rti"]):
             cat = "Governance"
+            dom = "Digital Governance"
         else:
             cat = "Managerial"
+            dom = "Managerial & Field Operations"
+
+        gap_amt = max(0, req - curr)
+        category_gaps[dom] += gap_amt
+        if gap_amt > 0 and (dom not in category_largest_gap or gap_amt > category_largest_gap[dom][1]):
+            category_largest_gap[dom] = (name, gap_amt)
 
         level_labels = {0: "None", 1: "Novice", 2: "Foundational", 3: "Intermediate", 4: "Advanced", 5: "Expert"}
         rows.append({
@@ -177,19 +317,109 @@ def get_gap_analysis(employee_id: str):
             "priority": priority
         })
 
+    # Dynamic overall competency percentage
+    overall_comp = int(round((total_curr_points / total_req_points * 100))) if total_req_points > 0 else 75
+
+    # Dynamic domains list
+    domains = []
+    for dom_name, total_gap in category_gaps.items():
+        if total_gap > 0 and dom_name in category_largest_gap:
+            top_s, _ = category_largest_gap[dom_name]
+            note = f"Primary focus on {top_s} and workflow integration"
+        elif total_gap > 0:
+            note = f"Identified competency gap of {total_gap} levels across domain"
+        else:
+            note = "Current competency meets benchmark requirements"
+
+        domains.append({
+            "domain": dom_name,
+            "gap": total_gap,
+            "note": note
+        })
+
     return {
         "employee_id": employee_id,
         "role": role,
         "department": emp.get("department", "Government Department"),
-        "overall_competency": 74,
+        "overall_competency": overall_comp,
         "rows": rows,
-        "domains": [
-            {"domain": "Technical & Analytical", "gap": 14, "note": "Python and automated data workflows"},
-            {"domain": "Statistical Sciences", "gap": 8, "note": "National accounts and sampling estimation"},
-            {"domain": "Managerial & Field Operations", "gap": 4, "note": "Field coordination and quality controls"},
-            {"domain": "Digital Governance", "gap": 0, "note": "Current competency meets benchmark"},
-        ]
+        "domains": domains
     }
+
+
+# ---------------------------------------------------------------------------
+# 2.1 Dynamic Radar & Competencies (Powers /dashboard & /competency-assessment)
+# ---------------------------------------------------------------------------
+@app.get("/api/competencies/{employee_id}", tags=["Competencies"])
+def get_competencies(employee_id: str):
+    """Returns dynamic radar chart coordinates and domain cards comparing current vs benchmark."""
+    emp = EMPLOYEES.get(employee_id) or list(EMPLOYEES.values())[0]
+    role = emp.get("designation") or emp.get("current_role", "Statistical Officer")
+    required = emp.get("required_competency_profile") or REQUIREMENTS.get(role, {})
+    existing = emp.get("existing_skills") or emp.get("quiz_assessed_skills") or {}
+
+    radar_domains = [
+        {"dimension": "Statistical Sciences", "keywords": ["survey", "analysis", "sampling", "statistic", "account", "econom"]},
+        {"dimension": "Technical & Analytics", "keywords": ["python", "sql", "digital", "data", "gis", "automation"]},
+        {"dimension": "Governance & Compliance", "keywords": ["governance", "privacy", "office", "compliance", "rti"]},
+        {"dimension": "Field Operations & Leadership", "keywords": ["leadership", "management", "communication", "coordination", "field"]}
+    ]
+
+    radar_data = []
+    domain_cards = []
+
+    for item in radar_domains:
+        dim = item["dimension"]
+        kw = item["keywords"]
+
+        curr_scores = []
+        req_scores = []
+
+        for s, req_lvl in required.items():
+            if any(k in s.lower() for k in kw):
+                req_scores.append(req_lvl)
+                curr_lvl = 0
+                for es, el in existing.items():
+                    if es.lower() == s.lower():
+                        curr_lvl = el
+                        break
+                curr_scores.append(curr_lvl)
+
+        if not req_scores:
+            req_scores = [3]
+            curr_scores = [2]
+
+        avg_req = sum(req_scores) / len(req_scores)
+        avg_curr = sum(curr_scores) / len(curr_scores)
+
+        target_pct = min(100, int(round(avg_req * 20)))
+        current_pct = min(100, int(round(avg_curr * 20)))
+
+        radar_data.append({
+            "dimension": dim,
+            "current": current_pct,
+            "target": target_pct
+        })
+
+        diff = current_pct - target_pct
+        status = "Above Target" if diff >= 5 else ("On Target" if diff >= -5 else "Needs Attention")
+        tone = "success" if diff >= -5 else "destructive"
+
+        domain_cards.append({
+            "icon": "analytics" if "Statistical" in dim else ("terminal" if "Technical" in dim else ("policy" if "Governance" in dim else "account_tree")),
+            "title": dim,
+            "description": f"Benchmark competency requirements for {role}.",
+            "score": current_pct,
+            "status": status,
+            "tone": tone
+        })
+
+    return {
+        "employee_id": employee_id,
+        "radar": radar_data,
+        "domains": domain_cards
+    }
+
 
 
 # ---------------------------------------------------------------------------
