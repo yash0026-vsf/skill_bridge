@@ -42,32 +42,67 @@ export const officer = {
   syncLabel: "Profile data source ready",
 };
 
-export const summaryStats = getSummaryStats();
-export const competencyDomains = getCompetencyDomains();
-export const radarData = getRadarData();
-export const radarLegend = getRadarLegend();
-export const skillGaps = getSkillGapSummaries();
+// Dynamically proxy dashboard arrays so any UI read pulls the latest live data from getters
+export const summaryStats = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getSummaryStats();
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
 
-/**
- * The dashboard cards use a legacy presentation shape (track/rating/reason/
- * level/statusLabel/cta). Keep that presentation adapter separate from the
- * richer learning recommendation contract used by /learning-paths.
- */
-export const learningPaths = getLearningRecommendations().map((path) => ({
-  track: `${path.provider} · ${path.category}`,
-  rating: "—",
-  title: path.title,
-  reason:
-    path.whyRecommended ??
-    path.description,
-  duration: path.duration,
-  level: path.category,
-  provider: path.provider,
-  progress: path.progress,
-  statusLabel:
-    path.status === "In Progress"
-      ? `${path.progress}% Completed`
-      : path.status,
-  cta: path.status === "In Progress" ? "Resume Module" : "View Path",
-  courseUrl: path.courseUrl,
-}));
+export const competencyDomains = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getCompetencyDomains();
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
+
+export const radarData = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getRadarData();
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
+
+export const radarLegend = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getRadarLegend();
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
+
+export const skillGaps = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getSkillGapSummaries();
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
+
+export const learningPaths = new Proxy([] as any, {
+  get(target, prop, receiver) {
+    const data = getLearningRecommendations().map((path) => ({
+      track: `${path.provider} · ${path.category}`,
+      rating: "—",
+      title: path.title,
+      reason: path.whyRecommended ?? path.description,
+      duration: path.duration,
+      level: path.category,
+      provider: path.provider,
+      progress: path.progress,
+      statusLabel:
+        path.status === "In Progress"
+          ? `${path.progress}% Completed`
+          : path.status,
+      cta: path.status === "In Progress" ? "Resume Module" : "View Path",
+      courseUrl: path.courseUrl,
+    }));
+    const val = Reflect.get(data, prop, receiver);
+    return typeof val === "function" ? val.bind(data) : val;
+  }
+});
+
