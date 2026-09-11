@@ -50,6 +50,45 @@ EMPLOYEES = {e["employee_id"]: e for e in load_employees()}
 REQUIREMENTS = load_requirements()
 COURSES = load_courses()
 
+# Pre-populate SIH test profiles
+EMPLOYEES["EMP101"] = {
+    "employee_id": "EMP101",
+    "name": "Rajesh Kumar",
+    "designation": "Statistical Officer",
+    "department": "MoSPI, Government of India",
+    "existing_skills": {"Survey Design": 4, "Data Analysis": 4, "Sampling Design": 4, "SPSS": 4, "Python": 1, "Communication": 3},
+    "required_competency_profile": {"Survey Design": 4, "Data Analysis": 4, "Python": 3, "Communication": 3, "Big Data": 3}
+}
+EMPLOYEES["EMP102"] = {
+    "employee_id": "EMP102",
+    "name": "Priya Sharma",
+    "designation": "Data Analyst",
+    "department": "National Accounts & Economic Analytics",
+    "existing_skills": {"Python": 4, "SQL": 4, "Tableau": 4, "Data Analysis": 4, "Survey Design": 1},
+    "required_competency_profile": {"Python": 4, "SQL": 4, "Data Analysis": 4, "Survey Design": 3, "National Accounts": 3}
+}
+EMPLOYEES["EMP103"] = {
+    "employee_id": "EMP103",
+    "name": "Amit Patel",
+    "designation": "Field Survey Supervisor",
+    "department": "Field Operations Division (FOD)",
+    "existing_skills": {"Field Enumeration": 4, "CAPI Application": 3, "Quality Control": 3, "Communication": 3},
+    "required_competency_profile": {"Field Enumeration": 4, "CAPI Application": 4, "Quality Control": 4, "Data Analysis": 2}
+}
+
+# Ensure all employees have baseline skills for initial presentation
+for emp in EMPLOYEES.values():
+    if not emp.get("existing_skills"):
+        req = emp.get("required_competency_profile") or REQUIREMENTS.get(emp.get("designation", "Statistical Officer"), {})
+        base = {}
+        for s, lvl in req.items():
+            if any(k in s.lower() for k in ["python", "machine learning", "big data", "gis", "sql"]):
+                base[s] = max(1, lvl - 2)
+            else:
+                base[s] = max(1, lvl if "design" in s.lower() else lvl - 1)
+        emp["existing_skills"] = base
+
+
 # ---------------------------------------------------------------------------
 # Pydantic Schemas (Aligned with frontend expectations)
 # ---------------------------------------------------------------------------
