@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -19,6 +19,7 @@ import {
   getLearningRecommendations,
   type LearningPathRecommendation,
 } from "@/lib/learner-data";
+import { fetchLearningRecommendations } from "@/lib/api";
 
 export const Route = createFileRoute("/learning-paths")({
   component: LearningPathsPage,
@@ -170,7 +171,17 @@ function LearningPathCard({ path }: { path: LearningPath }) {
 
 function LearningPathsPage() {
   const currentUser = getCurrentUserProfile();
-  const learningPaths = getLearningRecommendations();
+  const [learningPaths, setLearningPaths] = useState<LearningPathRecommendation[]>(() => getLearningRecommendations());
+
+  useEffect(() => {
+    fetchLearningRecommendations(currentUser.employeeId || "E001")
+      .then((res) => {
+        if (res && res.length > 0) {
+          setLearningPaths(res);
+        }
+      })
+      .catch(() => {});
+  }, [currentUser.employeeId]);
 
   const [activeFilter, setActiveFilter] =
     useState<"All" | LearningPathStatus>("All");
