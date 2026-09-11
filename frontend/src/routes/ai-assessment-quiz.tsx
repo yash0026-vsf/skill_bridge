@@ -1,5 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
+import { fetchDiagnosticQuiz, generatePostLearningQuiz, submitQuizAnswers, type QuizSubmitResult } from "@/lib/api";
+import { getCurrentUserProfile, saveCurrentUserProfile } from "@/lib/current-user";
 import {
   ArrowLeft,
   ArrowRight,
@@ -52,8 +54,28 @@ function AIAssessmentQuizPage() {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [markedForReview, setMarkedForReview] = useState<number[]>([]);
+  const [questions, setQuestions] = useState<QuizQuestion[]>(() => getQuizQuestions());
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [levelUpResult, setLevelUpResult] = useState<QuizSubmitResult | null>(null);
 
-  const questions = useMemo(() => getQuizQuestions(), []);
+  useEffect(() => {
+    if (isDiagnostic) {
+      const user = getCurrentUserProfile();
+      fetchDiagnosticQuiz(user.employeeId || "E001").then(resp => {
+        if (resp && resp.questions && resp.questions.length > 0) {
+          setQuestions(resp.questions.map(q => ({
+            id: q.id,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation,
+            competency: q.competency || resp.skill || "Survey Design"
+          })));
+        }
+      }).catch(err => console.warn("Diagnostic quiz load error:", err));
+    }
+  }, [isDiagnostic]);
   const insights = useMemo(() => getQuizInsights(), []);
 
   const currentQuestion = questions[currentQuestionIndex];
@@ -90,28 +112,36 @@ function AIAssessmentQuizPage() {
     setView("quiz");
   };
 
-  const handlePostLearningGenerate = () => {
+  const handlePostLearningGenerate = async () => {
     if (!selectedFile) {
       return;
     }
-
-    /*
-     * Temporary frontend behaviour.
-     *
-     * Later this button will send the selected learning material
-     * to the backend and request an AI-generated post-learning quiz.
-     */
-    startQuiz();
+    setIsGenerating(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+      formData.append("skill", "Survey Methodology & Analytics");
+      const resp = await generatePostLearningQuiz(formData);
+      if (resp && resp.questions && resp.questions.length > 0) {
+        setQuestions(resp.questions.map(q => ({
+          id: q.id,
+          question: q.question,
+          options: q.options,
+          correctAnswer: q.correctAnswer,
+          explanation: q.explanation,
+          competency: q.competency || resp.skill || "Official Statistics"
+        })));
+      }
+      startQuiz();
+    } catch (err) {
+      console.warn("AI quiz generate error:", err);
+      startQuiz();
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleDiagnosticStart = () => {
-    /*
-     * Temporary frontend behaviour.
-     *
-     * Later this action will retrieve the diagnostic quiz generated
-     * automatically by the backend from the learner's profile,
-     * role requirements and initial competency assessment.
-     */
     startQuiz();
   };
 
@@ -154,8 +184,36 @@ function AIAssessmentQuizPage() {
     );
   };
 
-  const handleSubmit = () => {
-    setView("results");
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const user = getCurrentUserProfile();
+      const skill = questions[0]?.competency || "Survey Design";
+      const answersMap: Record<string, number> = {};
+      Object.entries(answers).forEach(([k, v]) => {
+        answersMap[String(k)] = Number(v);
+      });
+
+      const res = await submitQuizAnswers({
+        employee_id: user.employeeId || "E001",
+        skill,
+        answers: answersMap,
+        quiz_type: mode
+      });
+
+      setLevelUpResult(res);
+      if (res.passed) {
+        saveCurrentUserProfile({
+          ...user,
+          overallCompetency: res.new_overall_competency
+        });
+      }
+    } catch (err) {
+      console.warn("Quiz submit error:", err);
+    } finally {
+      setIsSubmitting(false);
+      setView("results");
+    }
   };
 
   const handleRestart = () => {
@@ -181,6 +239,7 @@ function AIAssessmentQuizPage() {
             {view === "setup" && (
               <PostLearningSetupView
                 selectedFile={selectedFile}
+                isGenerating={isGenerating}
                 onFileSelect={setSelectedFile}
                 onGenerate={handlePostLearningGenerate}
               />
@@ -219,6 +278,7 @@ function AIAssessmentQuizPage() {
                 incorrectCount={incorrectCount}
                 notAttemptedCount={notAttemptedCount}
                 score={score}
+                levelUpResult={levelUpResult}
                 onRestart={handleRestart}
               />
             )}
@@ -231,10 +291,12 @@ function AIAssessmentQuizPage() {
 
 function PostLearningSetupView({
   selectedFile,
+  isGenerating = false,
   onFileSelect,
   onGenerate,
 }: {
   selectedFile: File | null;
+  isGenerating?: boolean;
   onFileSelect: (file: File | null) => void;
   onGenerate: () => void;
 }) {
@@ -635,6 +697,7 @@ function ResultsView({
   incorrectCount,
   notAttemptedCount,
   score,
+  levelUpResult,
   onRestart,
 }: {
   mode: QuizMode;
@@ -645,6 +708,7 @@ function ResultsView({
   incorrectCount: number;
   notAttemptedCount: number;
   score: number;
+  levelUpResult?: QuizSubmitResult | null;
   onRestart: () => void;
 }) {
   const isDiagnostic = mode === "diagnostic";
@@ -668,6 +732,29 @@ function ResultsView({
                 ? "Current Competency Results"
                 : "Learning Assessment Results"}
             </h1>
+
+            {levelUpResult?.passed && (
+              <div className="mt-4 rounded-xl border border-success/30 bg-success/10 p-5 text-success">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-success" />
+                  <h3 className="text-base font-bold text-success">Closed-Loop Verified Level Up!</h3>
+                </div>
+                <p className="mt-2 text-sm text-foreground">{levelUpResult.message}</p>
+                <div className="mt-3 flex flex-wrap items-center gap-4 text-xs font-semibold text-muted-foreground">
+                  <span>Competency: <strong className="text-foreground">{levelUpResult.skill}</strong></span>
+                  <span>•</span>
+                  <span>Progression: <strong className="text-foreground">Level {levelUpResult.old_level} ➔ Level {levelUpResult.new_level}</strong></span>
+                  <span>•</span>
+                  <span>Updated Overall Competency: <strong className="text-success">{levelUpResult.new_overall_competency}%</strong></span>
+                </div>
+                <div className="mt-4">
+                  <Link to="/dashboard" className="inline-flex items-center gap-2 rounded-lg bg-success px-4 py-2 text-xs font-bold text-success-foreground transition hover:bg-success/90">
+                    View Updated Dashboard
+                    <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+              </div>
+            )}
 
             
           </div>
