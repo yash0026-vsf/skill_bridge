@@ -1,3 +1,4 @@
+import { getCurrentUserProfile } from "./current-user";
 export type DashboardSummaryStat = {
   label: string;
   tag: string;
@@ -178,20 +179,103 @@ const mockRadarLegend: RadarLegendItem[] = [
   { label: "Governance (85%)", gap: false },
 ];
 
-export function getSummaryStats() {
-  return mockSummaryStats;
+export function getSummaryStats(): DashboardSummaryStat[] {
+  const profile = getCurrentUserProfile();
+  const overall = profile.overallCompetency || 74;
+  const levelText = overall >= 80 ? "Level 4 Expert" : (overall >= 70 ? "Level 3 Proficient" : (overall >= 50 ? "Level 2 Operational" : "Level 1 Foundational"));
+
+  return [
+    {
+      label: "Overall Competency",
+      tag: "+6%",
+      tagTone: "success",
+      value: `${overall}%`,
+      valueNote: levelText,
+      footnote: "DES State Average: 68%",
+      progress: overall,
+    },
+    ...mockSummaryStats.slice(1)
+  ];
 }
 
-export function getCompetencyDomains() {
+export function getCompetencyDomains(): CompetencyDomain[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeAssessment");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.initial_competencies) {
+          const comps = parsed.initial_competencies;
+          const statScore = comps["Statistical"] || comps["Statistical Sciences"] || 78;
+          const techScore = comps["Technical"] || comps["Technical & Analytics"] || 55;
+          const govScore = comps["Governance"] || comps["Governance & Compliance"] || 82;
+          const fieldScore = comps["Behavioural"] || comps["Field Operations"] || 72;
+          return [
+            {
+              icon: "analytics",
+              title: "Statistical Sciences",
+              description: "Survey Sampling, Price Statistics & Official Metrics",
+              score: statScore,
+              status: statScore >= 75 ? "Meets Benchmark (75%)" : "Needs Attention",
+              tone: statScore >= 75 ? "success" : "destructive",
+            },
+            {
+              icon: "terminal",
+              title: "Technical & Analytical",
+              description: "Python, SQL data processing & automated pipelines",
+              score: techScore,
+              status: techScore >= 75 ? "Meets Benchmark (75%)" : `Gap: -${75 - techScore}%`,
+              tone: techScore >= 75 ? "success" : "destructive",
+            },
+            {
+              icon: "policy",
+              title: "Digital Governance",
+              description: "DPDP Act, Metadata Harmonization & Data Integrity",
+              score: govScore,
+              status: "Exceeds Benchmark (70%)",
+              tone: "success",
+            },
+            {
+              icon: "account_tree",
+              title: "Managerial & Field Lead",
+              description: "Field Operations, Supervision & Quality Assurance",
+              score: fieldScore,
+              status: "Meets Benchmark (70%)",
+              tone: "neutral",
+            },
+          ];
+        }
+      }
+    } catch {}
+  }
   return mockCompetencyDomains;
 }
 
-export function getRadarData() {
+export function getRadarData(): RadarPoint[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeAssessment");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.extracted_skills && parsed.extracted_skills.length > 0) {
+          return parsed.extracted_skills.map((s: any) => ({
+            dimension: s.skill,
+            current: Math.min(100, (s.level || 2) * 20),
+            target: 80
+          }));
+        }
+      }
+    } catch {}
+  }
   return mockRadarData;
 }
 
-export function getRadarLegend() {
-  return mockRadarLegend;
+export function getRadarLegend(): RadarLegendItem[] {
+  const points = getRadarData();
+  return points.map(p => ({
+    label: `${p.dimension} (${p.current}%)`,
+    gap: p.current < p.target
+  }));
 }
 
 /* ---------------- Learner competency assessment ---------------- */
@@ -208,12 +292,27 @@ const mockCompetencyAssessmentState: CompetencyAssessmentState = {
   status: "Ready",
 };
 
-export function getDefaultCompetencies() {
+export function getDefaultCompetencies(): CompetencyScore[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeAssessment");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.initial_competencies) {
+          return Object.entries(parsed.initial_competencies).map(([name, score]) => ({
+            name,
+            score: Number(score)
+          }));
+        }
+      }
+    } catch {}
+  }
   return mockDefaultCompetencies;
 }
 
-export function getOverallCompetency() {
-  return mockOverallCompetency;
+export function getOverallCompetency(): number {
+  const profile = getCurrentUserProfile();
+  return profile.overallCompetency || mockOverallCompetency;
 }
 
 export function getCompetencyAssessmentState() {
@@ -347,15 +446,50 @@ const mockSkillGapDomains: SkillGapDomain[] = [
   },
 ];
 
-export function getSkillGapSummaries() {
+export function getSkillGapSummaries(): SkillGapSummary[] {
+  const rows = getSkillGapRows();
+  const gapped = rows.filter(r => r.gap < 0);
+  if (gapped.length > 0) {
+    return gapped.slice(0, 4).map(g => ({
+      icon: g.category === "Technical" ? "terminal" : (g.category === "Statistical" ? "analytics" : "policy"),
+      title: g.skill,
+      severity: `${g.gap} Levels`,
+      current: `Level ${g.currentLevel} (${g.currentLabel})`,
+      required: `Level ${g.requiredLevel} (${g.requiredLabel})`,
+      rationale: `Direct competency gap identified against ${g.category} civil service benchmark.`,
+      critical: g.gap <= -2
+    }));
+  }
   return mockSkillGapSummaries;
 }
 
-export function getSkillGapRows() {
+export function getSkillGapRows(): SkillGapRow[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeGapAnalysis");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.rows && parsed.rows.length > 0) {
+          return parsed.rows;
+        }
+      }
+    } catch {}
+  }
   return mockSkillGapRows;
 }
 
-export function getSkillGapDomains() {
+export function getSkillGapDomains(): SkillGapDomain[] {
+  if (typeof window !== "undefined") {
+    try {
+      const raw = localStorage.getItem("statskill.activeGapAnalysis");
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.domains && parsed.domains.length > 0) {
+          return parsed.domains;
+        }
+      }
+    } catch {}
+  }
   return mockSkillGapDomains;
 }
 
