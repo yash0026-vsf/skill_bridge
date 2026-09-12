@@ -476,8 +476,8 @@ export function LearningPaths() {
                 {path.statusLabel}
               </span>
 
-              <button
-                type="button"
+              <Link
+                to="/learning-paths"
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-bold transition-colors",
                   path.progress > 0
@@ -489,7 +489,7 @@ export function LearningPaths() {
                 {path.progress > 0 ? (
                   <Play className="h-3.5 w-3.5" />
                 ) : null}
-              </button>
+              </Link>
             </div>
           </article>
         ))}
