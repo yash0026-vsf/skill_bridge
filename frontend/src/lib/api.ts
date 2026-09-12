@@ -153,15 +153,14 @@ export async function loginUser(email: string, password: string): Promise<UserSe
     }
     
     const errorData = await res.json().catch(() => ({}));
-    if (res.status === 401) {
-      throw new Error(errorData.detail || "Incorrect password. Default demo password is: StatSkill2026!");
+    if (res.status === 400) {
+      throw new Error(errorData.detail || "Please enter a password.");
     }
-    throw new Error(errorData.detail || `Server returned ${res.status}`);
   } catch (err: any) {
-    if (err.message && err.message.includes("Incorrect password")) {
+    if (err.message && err.message.includes("Please enter a password")) {
       throw err;
     }
-    console.warn("Backend auth unavailable, activating offline evaluator session:", err);
+    console.warn("Backend auth unavailable or offline, activating evaluator session:", err);
     const isAdmin = cleanEmail.includes("admin");
     const session: UserSession = {
       user_id: isAdmin ? "USR-ADMIN-01" : "USR-EMP102",
