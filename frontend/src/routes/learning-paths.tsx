@@ -5,11 +5,14 @@ import {
   BookOpen,
   CheckCircle2,
   Clock3,
+  ExternalLink,
   Filter,
   GraduationCap,
+  Play,
   Sparkles,
   Target,
   TrendingUp,
+  X,
 } from "lucide-react";
 
 import { DashboardSidebar } from "@/components/dashboard/DashboardSidebar";
@@ -44,7 +47,13 @@ function StatusBadge({ status }: { status: LearningPathStatus }) {
   );
 }
 
-function LearningPathCard({ path }: { path: LearningPath }) {
+function LearningPathCard({
+  path,
+  onSelect,
+}: {
+  path: LearningPath;
+  onSelect: (p: LearningPath) => void;
+}) {
   return (
     <article className="rounded-xl border border-border bg-card p-4 shadow-sm transition-shadow hover:shadow-md">
       <div className="flex flex-col gap-3.5">
@@ -142,27 +151,14 @@ function LearningPathCard({ path }: { path: LearningPath }) {
             {path.priority} priority
           </div>
 
-          {path.courseUrl ? (
-            <a
-              href={path.courseUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
-            >
-              {path.status === "In Progress" ? "Continue" : "View Path"}
-              <ArrowRight className="h-3.5 w-3.5" />
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="inline-flex cursor-not-allowed items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-[11px] font-semibold text-muted-foreground"
-              title="Course link will be provided during integration"
-            >
-              {path.status === "In Progress" ? "Continue" : "View Path"}
-              <ArrowRight className="h-3.5 w-3.5" />
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={() => onSelect(path)}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-3 py-2 text-[11px] font-semibold text-accent-foreground transition hover:bg-accent/90"
+          >
+            {path.status === "In Progress" ? "Resume Module" : "View Course Details"}
+            <ArrowRight className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
     </article>
@@ -172,6 +168,7 @@ function LearningPathCard({ path }: { path: LearningPath }) {
 function LearningPathsPage() {
   const currentUser = getCurrentUserProfile();
   const [learningPaths, setLearningPaths] = useState<LearningPathRecommendation[]>(() => getLearningRecommendations());
+  const [selectedCourse, setSelectedCourse] = useState<LearningPath | null>(null);
 
   useEffect(() => {
     fetchLearningRecommendations(currentUser.employeeId || "E001")
@@ -307,7 +304,7 @@ function LearningPathsPage() {
 
             <section className="grid gap-4 xl:grid-cols-2">
               {filteredPaths.map((path) => (
-                <LearningPathCard key={path.id} path={path} />
+                <LearningPathCard key={path.id} path={path} onSelect={setSelectedCourse} />
               ))}
             </section>
 
@@ -327,6 +324,138 @@ function LearningPathsPage() {
           </div>
         </main>
       </div>
+
+      {/* Interactive Course Details Modal */}
+      {selectedCourse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-2xl border border-border bg-card p-6 shadow-2xl animate-in fade-in zoom-in-95">
+            <div className="flex items-start justify-between gap-3 border-b border-border pb-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent">
+                  <BookOpen className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-accent/10 px-2.5 py-0.5 text-[10px] font-bold text-accent">
+                      {selectedCourse.provider}
+                    </span>
+                    <span className="rounded-full bg-muted px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                      {selectedCourse.category}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      · {selectedCourse.duration}
+                    </span>
+                  </div>
+                  <h3 className="mt-1 text-lg font-bold text-foreground">
+                    {selectedCourse.title}
+                  </h3>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedCourse(null)}
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Course Overview</h4>
+                <p className="mt-1 text-xs leading-relaxed text-foreground">
+                  {selectedCourse.description}
+                </p>
+              </div>
+
+              {selectedCourse.whyRecommended && (
+                <div className="rounded-xl border border-border bg-muted/40 p-3">
+                  <div className="flex items-start gap-2">
+                    <Sparkles className="mt-0.5 h-3.5 w-3.5 text-accent shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-bold uppercase tracking-wide text-accent">
+                        Civil Service Cadre Alignment
+                      </p>
+                      <p className="mt-0.5 text-xs text-muted-foreground leading-relaxed">
+                        {selectedCourse.whyRecommended}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Competencies Addressed</h4>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {selectedCourse.skills.map((s) => (
+                    <span
+                      key={s}
+                      className="rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground"
+                    >
+                      🎯 {s}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-border bg-card p-4 space-y-3">
+                <h4 className="text-xs font-bold text-foreground">Module Syllabus & Progress</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 text-foreground">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      1. Foundational Theory & MoSPI Directives
+                    </span>
+                    <span className="text-[11px] font-semibold text-emerald-600">Completed</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 text-foreground">
+                      <Play className="h-4 w-4 text-accent" />
+                      2. Applied Hands-On Analysis & Scripting
+                    </span>
+                    <span className="text-[11px] font-semibold text-accent">In Progress</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <Clock3 className="h-4 w-4" />
+                      3. Cadre Final Capstone & Verification
+                    </span>
+                    <span className="text-[11px] font-semibold text-muted-foreground">Pending</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+              <button
+                type="button"
+                onClick={() => setSelectedCourse(null)}
+                className="rounded-lg border border-border bg-background px-4 py-2.5 text-xs font-semibold text-foreground hover:bg-muted"
+              >
+                Close
+              </button>
+
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/ai-assessment-quiz"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-accent/30 bg-accent-soft px-3.5 py-2.5 text-xs font-semibold text-accent hover:bg-accent/20 transition"
+                >
+                  <Sparkles className="h-3.5 w-3.5" /> Take Mastery Quiz
+                </Link>
+
+                <a
+                  href={selectedCourse.courseUrl || "https://igotkarmayogi.gov.in/"}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-accent px-4 py-2.5 text-xs font-semibold text-accent-foreground hover:bg-accent/90 transition"
+                >
+                  Launch on iGOT Karmayogi <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
