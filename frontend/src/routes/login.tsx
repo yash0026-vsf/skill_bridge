@@ -202,6 +202,9 @@ function LoginPage() {
                     {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  Demo Password: <span className="font-mono font-bold text-accent">StatSkill2026!</span> or <span className="font-mono font-bold text-accent">admin123</span>
+                </p>
               </div>
 
               <button
