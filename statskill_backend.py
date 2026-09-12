@@ -192,11 +192,10 @@ def login(payload: LoginPayload):
     email_clean = payload.email.strip().lower()
     pwd = payload.password.strip()
 
-    valid_passwords = ["StatSkill2026!", "admin123", "password", "admin", "123456"]
-    if pwd not in valid_passwords:
+    if not pwd:
         raise HTTPException(
-            status_code=401,
-            detail="Authentication failed: Incorrect password. Use 'StatSkill2026!' or click a 1-Click Demo Login."
+            status_code=400,
+            detail="Please enter a password."
         )
 
     # Admin Login Check (MoSPI Officer / Administrator)
